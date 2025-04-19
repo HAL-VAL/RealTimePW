@@ -1,0 +1,4 @@
+PW2-Ex1
+g++ PW2-Ex1.cpp -fopenmp `pkg-config opencv4 --cflags --libs` -o PW2-Ex1
+./PW2-Ex1 moon.mp4
+
