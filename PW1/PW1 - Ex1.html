@@ -1,0 +1,455 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta
+      name="viewport"
+      content="width=device-width, user-scalable=no, minimum-scale=1.0, maximum-scale=1.0"
+    />
+    <title>PRACTICAL WORK 1 - Ex1</title>
+    <style>
+      body {
+        margin: 0;
+        padding: 0;
+        width: 100%;
+        height: 100%;
+
+        overflow: hidden;
+        background-color: #aaaaaa;
+        background-attachment: fixed !important;
+        font-family: Monospace;
+      }
+    </style>
+  </head>
+  <body>
+    <script id="vertShader" type="shader">
+    uniform mat4 modelViewMatrix;
+    uniform mat4 projectionMatrix;
+    precision highp float;
+    in vec3 position;
+
+    void main() {
+        gl_Position = projectionMatrix *
+                      modelViewMatrix * vec4(position, 1.0 );
+      }
+    </script>
+
+    <script id="fragShader_TrueAnaglyph" type="shader">
+      precision highp float;
+    
+      uniform sampler2D image;
+      uniform vec2 resolution;
+    
+      out vec4 out_FragColor;
+    
+      void main() {
+        // Change fragment coordinates to float
+        ivec2 fragCoord = ivec2(gl_FragCoord.xy);
+  
+        // Left image
+        ivec2 leftCoord = ivec2(fragCoord.x / 2, fragCoord.y);
+        vec4 texelL = texelFetch(image, leftCoord, 0);
+  
+        // Color formula for the left image
+        vec3 True_mat = vec3(0.299, 0.587, 0.114);
+        float True_r = dot(True_mat, texelL.rgb);
+  
+        // Right image
+        int halfWidth = int(resolution.x * 0.5);
+        ivec2 rightCoord = ivec2(fragCoord.x / 2 + halfWidth, fragCoord.y);
+        vec4 texelR = texelFetch(image, rightCoord, 0);
+  
+        // Color formula for the right image
+        float True_b = dot(True_mat, texelR.rgb);
+  
+        // output coordinates
+        out_FragColor = vec4(True_r, 0.0, True_b, 1.0);
+      }
+    </script>
+    
+    <script id="fragShader_GrayAnaglyph" type="shader">
+      precision highp float;
+      uniform sampler2D image;
+      uniform vec2 resolution;
+      out vec4 out_FragColor;
+    
+      void main() {
+        // Change fragment coordinates to float
+        ivec2 fragCoord = ivec2(gl_FragCoord.xy);
+        
+        // Left image
+        ivec2 leftCoord = ivec2(fragCoord.x / 2, fragCoord.y);
+        vec4 texelL = texelFetch(image, leftCoord, 0);
+  
+        // Color formula for the left image
+        vec3 Gray_mat = vec3(0.299, 0.587, 0.114);
+        float Gray_r = dot(Gray_mat, texelL.rgb);
+  
+        // Right image
+        int halfWidth = int(resolution.x * 0.5);
+        ivec2 rightCoord = ivec2(fragCoord.x / 2 + halfWidth, fragCoord.y);
+        vec4 texelR = texelFetch(image, rightCoord, 0);
+  
+        // Color formula for the right image
+        float Gray_g = dot(Gray_mat, texelR.rgb);
+        float Gray_b = dot(Gray_mat, texelR.rgb);
+  
+        // output coordinates
+        out_FragColor = vec4(Gray_r, Gray_g, Gray_b, 1.0);
+      }
+    </script>
+    
+      
+    <script id="fragShader_ColorAnaglyph" type="shader">
+      precision highp float;
+      uniform sampler2D image;
+      uniform vec2 resolution;
+      out vec4 out_FragColor;
+    
+      void main() {
+          // Change fragment coordinates to float
+          ivec2 fragCoord = ivec2(gl_FragCoord.xy);
+    
+          // Left image
+          ivec2 leftCoord = ivec2(fragCoord.x / 2, fragCoord.y);
+          vec4 texelL = texelFetch(image, leftCoord, 0);
+    
+          // Right image
+          int halfWidth = int(resolution.x * 0.5);
+          ivec2 rightCoord = ivec2(fragCoord.x / 2 + halfWidth, fragCoord.y);
+          vec4 texelR = texelFetch(image, rightCoord, 0);
+    
+          // output coordinates
+          out_FragColor = vec4(texelL.r, texelR.g, texelR.b, 1.0);
+      }
+    </script>
+    
+      
+    <script id="fragShader_HalfColorAnaglyph" type="shader">
+      precision highp float;
+      uniform sampler2D image;
+      uniform vec2 resolution;
+      out vec4 out_FragColor;
+      
+      void main() {
+        // Change fragment coordinates to float
+        ivec2 fragCoord = ivec2(gl_FragCoord.xy);
+        
+        // Left image
+        ivec2 leftCoord = ivec2(fragCoord.x / 2, fragCoord.y);
+        vec4 texelL = texelFetch(image, leftCoord, 0);
+
+        // Color formula for the left image
+        vec3 left_mat = vec3(0.299, 0.587, 0.114);
+        float Half_r = dot(left_mat, texelL.rgb);
+
+        // Right image
+        int halfWidth = int(resolution.x * 0.5);
+        ivec2 rightCoord = ivec2(fragCoord.x / 2 + halfWidth, fragCoord.y);
+        vec4 texelR = texelFetch(image, rightCoord, 0);
+
+        // output coordinates
+        out_FragColor = vec4(Half_r, texelR.g, texelR.b, 1.0);
+      }
+    </script>
+
+
+    <script id="fragShader_OptimizedAnaglyph" type="shader">
+      precision highp float;
+    
+      uniform sampler2D image;
+      uniform vec2 resolution;
+    
+      out vec4 out_FragColor;
+    
+      void main() {
+        // Change fragment coordinates to float
+        ivec2 fragCoord = ivec2(gl_FragCoord.xy);
+  
+        // Left image
+        ivec2 leftCoord = ivec2(fragCoord.x / 2, fragCoord.y);
+        vec4 texelL = texelFetch(image, leftCoord, 0);
+  
+        // Color formula for the left image
+        vec3 left_mat = vec3(0.0, 0.7, 0.3);
+        float Opt_r = dot(left_mat, texelL.rgb);
+  
+        // Right image
+        int halfWidth = int(resolution.x * 0.5);
+        ivec2 rightCoord = ivec2(fragCoord.x / 2 + halfWidth, fragCoord.y);
+        vec4 texelR = texelFetch(image, rightCoord, 0);
+  
+        // output coordinates
+        out_FragColor = vec4(Opt_r, texelR.g, texelR.b, 1.0);
+      }
+    </script>
+
+    <script id="fragShader_Original" type="shader">
+      precision highp float;
+      uniform sampler2D image;
+      uniform vec2 resolution;
+      out vec4 out_FragColor;
+
+      
+      void main() {
+        // Change fragment coordinates to float
+        ivec2 fragCoord = ivec2(gl_FragCoord.xy);
+    
+        // Left image
+        ivec2 leftCoord = ivec2(fragCoord.x / 2, fragCoord.y);
+        vec4 texelL = texelFetch(image, leftCoord, 0);
+
+        // Original image is left image
+        out_FragColor = vec4(texelL.r, texelL.g, texelL.b, 1.0);
+      }
+      </script>
+
+
+    <script
+      async
+      src="https://unpkg.com/es-module-shims@1.3.6/dist/es-module-shims.js"
+    ></script>
+    <script type="importmap">
+      {
+        "imports": {
+          "three": "https://unpkg.com/three@0.172.0/build/three.module.js",
+          "three/addons/": "https://unpkg.com/three@0.172.0/examples/jsm/"
+        }
+      }
+    </script>
+
+    <script type="module">
+      import * as THREE from "three";
+      import { OrbitControls } from "three/addons/controls/OrbitControls.js";
+      import { GUI } from "three/addons/libs/lil-gui.module.min.js";
+      import WEBGL from "three/addons/capabilities/WebGL.js";
+
+      function IVimageProcessing(height, width, imageProcessingMaterial) {
+        this.height = height;
+        this.width = width;
+
+        //3 rtt setup
+        this.scene = new THREE.Scene();
+        this.orthoCamera = new THREE.OrthographicCamera(
+          -1,
+          1,
+          1,
+          -1,
+          1 / Math.pow(2, 53),
+          1
+        );
+
+        //4 create a target texture
+        var options = {
+          minFilter: THREE.NearestFilter,
+          magFilter: THREE.NearestFilter,
+          format: THREE.RGBAFormat,
+          type: THREE.FloatType,
+          canvas: canvas,
+          context: context,
+        };
+        this.rtt = new THREE.WebGLRenderTarget(width, height, options);
+
+        var geom = new THREE.BufferGeometry();
+        geom.setAttribute(
+          "position",
+          new THREE.BufferAttribute(
+            new Float32Array([
+              -1, -1, 0, 1, -1, 0, 1, 1, 0, -1, -1, 0, 1, 1, 0, -1, 1, 0,
+            ]),
+            3
+          )
+        );
+        this.scene.add(new THREE.Mesh(geom, imageProcessingMaterial));
+      }
+
+      function IVprocess(imageProcessing, renderer) {
+        renderer.setRenderTarget(imageProcessing.rtt);
+        renderer.render(imageProcessing.scene, imageProcessing.orthoCamera);
+        renderer.setRenderTarget(null);
+      }
+
+      var camera, controls, scene, renderer, container;
+      var context, canvas;
+      var plan;
+
+      // VIDEO AND THE ASSOCIATED TEXTURE
+      var video, videoTexture;
+
+      var imageProcessing, imageProcessingMaterial;
+
+      var shaderId = "fragShader_Original";
+      let AnaglyphShader = document.getElementById(shaderId).text;
+
+      // GUI
+      var gui;
+
+      init();
+      animate();
+
+      function init() {
+        if (WEBGL.isWebGL2Available() === false) {
+          document.body.appendChild(WEBGL.getWebGL2ErrorMessage());
+        }
+        container = document.createElement("div");
+        document.body.appendChild(container);
+
+        canvas = document.createElement("canvas");
+        context = canvas.getContext("webgl2");
+        document.body.appendChild(canvas);
+
+        scene = new THREE.Scene();
+
+        renderer = new THREE.WebGLRenderer({
+          canvas: canvas,
+          context: context,
+        });
+        renderer.autoClear = false;
+        renderer.setPixelRatio(window.devicePixelRatio);
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        renderer.shadowMap.enabled = false;
+
+        container.appendChild(renderer.domElement);
+
+        camera = new THREE.PerspectiveCamera(
+          75,
+          window.innerWidth / window.innerHeight,
+          0.001,
+          10
+        );
+        camera.position.z = 1.0;
+        controls = new OrbitControls(camera, renderer.domElement);
+        controls.enableZoom = true; // zoom 
+        controls.enablePan = true; // pan
+        controls.enableRotate = true;
+        controls.minDistance = 0.005;
+        controls.maxDistance = 2.0;
+
+        controls.addEventListener("change", render);
+        controls.update();
+
+        video = document.createElement("video");
+        video.src = "San_Francisco.mp4"; // San_Francisco.mp4
+        video.load();
+        video.muted = true;
+        video.loop = true;
+
+        video.onloadeddata = function () {
+          videoTexture = new THREE.VideoTexture(video);
+          videoTexture.minFilter = THREE.NearestFilter;
+          videoTexture.magFilter = THREE.NearestFilter;
+          videoTexture.generateMipmaps = false;
+          videoTexture.format = THREE.RGBAFormat;
+
+
+          imageProcessingMaterial = new THREE.RawShaderMaterial({
+            uniforms: {
+              resolution: { value: new THREE.Vector2(video.videoWidth, video.videoHeight) },
+              image: { type: "t", value: videoTexture }
+            },
+            vertexShader: document.getElementById("vertShader").text,
+            fragmentShader: AnaglyphShader,
+            glslVersion: THREE.GLSL3,
+          });
+
+          imageProcessing = new IVimageProcessing(
+            video.videoHeight,
+            video.videoWidth,
+            imageProcessingMaterial
+          );
+
+          console.log(imageProcessing.width);
+          console.log(imageProcessing.height);
+
+
+          var leftgeo = new THREE.PlaneGeometry(
+            1,
+            video.videoHeight / (video.videoWidth / 2.0)
+          );
+          var material2 = new THREE.MeshBasicMaterial({
+            map:  imageProcessing.rtt.texture,
+            side: THREE.DoubleSide,
+          });
+
+          plan = new THREE.Mesh(leftgeo, material2);
+          plan.receiveShadow = false;
+          plan.castShadow = false;
+          scene.add(plan);
+
+          var pausePlayObj = {
+            pausePlay: function () {
+              if (!video.paused) {
+                console.log("pause");
+                video.pause();
+              } else {
+                console.log("play");
+                video.play();
+              }
+            },
+            StopVideo: function () {
+              video.pause();
+              video.currentTime = 0; // Reset the video playback position to the beginning
+              console.log('Stopped and reset');
+            },
+            add10sec: function () {
+              video.currentTime = video.currentTime + 10;
+              console.log(video.currentTime);
+            },
+          };
+
+
+          const anaglyphParams ={
+            anaglyphs: shaderId
+          }
+
+          gui = new GUI();
+          gui
+            .add(anaglyphParams, "anaglyphs", {
+              "Original": "fragShader_Original",
+              "True Anaglyphs": "fragShader_TrueAnaglyph",
+              "Gray Anaglyphs": "fragShader_GrayAnaglyph",
+              "Color Anaglyphs": "fragShader_ColorAnaglyph",
+              "Half Color Anaglyphs": "fragShader_HalfColorAnaglyph",
+              "Optimized Anaglyphs": "fragShader_OptimizedAnaglyph"
+            })
+            .name("Select Anaglyphs")
+            .onChange((selectedShaderId) => {
+              // update the shader and anaglyphs
+              shaderId = selectedShaderId; 
+              imageProcessingMaterial.fragmentShader = document.getElementById(shaderId).text;
+              imageProcessingMaterial.needsUpdate = true;
+            });
+          gui.add(pausePlayObj, "pausePlay").name("Pause/play video");
+          gui.add(pausePlayObj, "StopVideo").name("Stop video")
+          gui.add(pausePlayObj, "add10sec").name("Add 10 seconds");
+
+          video.play();
+        };
+
+        window.addEventListener("resize", onWindowResize, false);
+      }
+    
+
+      function render() {
+        renderer.clear();
+
+        if (typeof imageProcessing !== "undefined")
+          IVprocess(imageProcessing, renderer);
+        renderer.render(scene, camera);
+      }
+
+      function animate() {
+        requestAnimationFrame(animate);
+        controls.update();
+        render();
+      }
+
+      function onWindowResize() {
+        camera.aspect = window.innerWidth / window.innerHeight;
+        camera.updateProjectionMatrix();
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        render();
+      }
+    </script>
+  </body>
+</html>

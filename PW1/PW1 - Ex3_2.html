@@ -1,0 +1,578 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta
+      name="viewport"
+      content="width=device-width, user-scalable=no, minimum-scale=1.0, maximum-scale=1.0"
+    />
+    <title>PRACTICAL WORK 1 - Ex3_2</title>
+    <style>
+      body {
+        margin: 0;
+        padding: 0;
+        width: 100%;
+        height: 100%;
+
+        overflow: hidden;
+        background-color: #aaaaaa;
+        background-attachment: fixed !important;
+        font-family: Monospace;
+      }
+    </style>
+  </head>
+  <body>
+    <script id="vertShader" type="shader">
+    uniform mat4 modelViewMatrix;
+    uniform mat4 projectionMatrix;
+
+    precision highp float;
+
+    in vec3 position;
+
+    void main() {
+        gl_Position = projectionMatrix *
+                      modelViewMatrix * vec4(position, 1.0 );
+      }
+    </script>
+
+    <script id="fragShader" type="shader">
+
+        precision highp float;
+        
+        uniform sampler2D image;
+        uniform vec2 resolution;
+        uniform int anaglyphType;
+        out vec4 out_FragColor;
+
+        // 1. Convolution for gaussian filter
+        uniform int kernelSize;
+        uniform float sigma;
+        uniform int Convfilter;
+        
+        // 2. Separable gaussian filter
+        uniform int SepFilter;
+        uniform float sigmaSep;
+        uniform int kernelSizeSep;
+
+        // 3. Denoising for median filter
+        uniform int medianFilter;
+        uniform int kernelSizeMed;
+
+        // 1. Convolution for gaussian filter
+        vec4 GaussianFilter(sampler2D tex, ivec2 center, int kernelSize, float sigma) {
+          int kernel_area = kernelSize / 2;
+          vec4 sum = vec4(0.0);
+          float weightSum = 0.0;
+        
+          for (int kernel_x = -kernel_area; kernel_x <= kernel_area; kernel_x++) {
+            for (int kernel_y = -kernel_area; kernel_y <= kernel_area; kernel_y++) {
+              vec2 offset = vec2(float(kernel_x), float(kernel_y));
+              float weight = exp(-(dot(offset, offset)) / (2.0 * sigma * sigma)) / 2.0 * 3.141592 * sigma * sigma; // gaussian fomula
+              sum += texelFetch(tex, center + ivec2(kernel_x, kernel_y), 0) * weight;
+              weightSum += weight;
+            }
+          }
+          return sum / weightSum;
+        }
+
+        // 1. Convolution for Laplacian filter
+        vec4 LaplacianFilter(sampler2D tex, ivec2 center) {
+          vec4 sum = vec4(0.0);
+
+          float kernel4[9] = float[](
+            0.0, -1.0,  0.0,
+            -1.0,  4.0, -1.0,
+            0.0, -1.0,  0.0
+          );
+        
+          for (int ky = -1; ky <= 1; ky++) {
+            for (int kx = -1; kx <= 1; kx++) {
+              int index = (ky + 1) * 3 + (kx + 1); // y*3 + x : 1D index
+              vec4 texel = texelFetch(tex, center + ivec2(kx, ky), 0);
+              sum += texel * kernel4[index];
+            }
+          }
+          return sum;
+        }
+
+        // 2. Separable gaussian filter
+        vec4 SeparableGaussianFilter(sampler2D tex, ivec2 center, int kernelSizeSep, float sigmaSep) {
+          int kernel_area = kernelSizeSep / 2;
+        
+          float totalWeight = 0.0;
+          vec4 result = vec4(0.0);
+        
+          // Bulur in y axis
+          for (int j = -10; j <= 10; ++j) {
+            if (abs(j) > kernel_area) continue;
+        
+            // blur in x axis
+            vec4 blurX = vec4(0.0);
+            float weightSumX = 0.0;
+        
+            for (int i = -10; i <= 10; ++i) {
+              if (abs(i) > kernel_area) continue;
+        
+              float weightX = exp(-float(i * i) / (2.0 * sigmaSep * sigmaSep));
+              blurX += texelFetch(tex, center + ivec2(i, j), 0) * weightX;
+              weightSumX += weightX;
+            }
+        
+            blurX /= weightSumX; // normalization
+        
+            // weight in y axis
+            float weightY = exp(-float(j * j) / (2.0 * sigmaSep * sigmaSep));
+            // apply two-axis blur
+            result += blurX * weightY;
+            totalWeight += weightY;
+          }
+        
+          return result / totalWeight;
+        }
+        
+        // 3. Denoising for median filter
+        vec4 MedianFilter(sampler2D tex, ivec2 center, int kernelSizeMed) {
+          int kernel_area = kernelSizeMed / 2;
+          const int kernelMaxSize = 90; // memory allocation
+          vec3 sort[kernelMaxSize];
+          int k = 0;
+        
+          for (int j = -kernel_area; j <= kernel_area; ++j) {
+            for (int i = -kernel_area; i <= kernel_area; ++i) {
+              sort[k] = texelFetch(tex, center + ivec2(i, j), 0).rgb;
+              k++;
+            }
+          }
+        
+          // Calculate the median separately for R, G, B
+          float r[kernelMaxSize], g[kernelMaxSize], b[kernelMaxSize];
+          for (int i = 0; i < k; ++i) {
+            r[i] = sort[i].r;
+            g[i] = sort[i].g;
+            b[i] = sort[i].b;
+          }
+        
+          // sort RGB
+          for (int i = 0; i < k; ++i) {
+            for (int j = i + 1; j < k; ++j) {
+              if (r[i] > r[j]) { 
+                float tmp = r[i]; 
+                r[i] = r[j]; 
+                r[j] = tmp; 
+              }
+              if (g[i] > g[j]) { 
+                float tmp = g[i]; 
+                g[i] = g[j]; 
+                g[j] = tmp; 
+              }
+              if (b[i] > b[j]) { 
+                float tmp = b[i]; 
+                b[i] = b[j]; 
+                b[j] = tmp; 
+              }
+            }
+          }
+          return vec4(r[k/2], g[k/2], b[k/2], 1.0); // use median value
+        }
+        
+
+        void main() {
+            // For color filter
+            ivec2 fragCoord = ivec2(gl_FragCoord.xy);
+            int halfWidth = int(resolution.x * 0.5);
+            ivec2 leftCoord = ivec2(fragCoord.x / 2, fragCoord.y);
+            ivec2 rightCoord = ivec2(fragCoord.x / 2 + halfWidth, fragCoord.y);
+            vec4 texelL = texelFetch(image, leftCoord, 0);
+            vec4 texelR = texelFetch(image, rightCoord, 0);
+            vec4 result;
+
+            // for conv filter
+            if (Convfilter == 0) {
+              ;
+            } else if (Convfilter == 1) {
+              texelL = GaussianFilter(image, leftCoord, kernelSize, sigma);
+              texelR = GaussianFilter(image, rightCoord, kernelSize, sigma);
+            } else if (Convfilter == 2) {
+              texelL = LaplacianFilter(image, leftCoord);
+              texelR = LaplacianFilter(image, rightCoord);
+              // vec4 lap_L = abs(texelL);
+              // vec4 lap_R = abs(texelR);
+            }
+
+            if (SepFilter == 1) {
+              // Sepalable Gaussian filter
+              texelL = SeparableGaussianFilter(image, leftCoord, kernelSizeSep, sigmaSep);
+              texelR = SeparableGaussianFilter(image, rightCoord, kernelSizeSep, sigmaSep);
+            } else {}
+
+            if (medianFilter == 1) {
+              // Median filter
+              texelL = MedianFilter(image, leftCoord, kernelSizeMed);
+              texelR = MedianFilter(image, rightCoord, kernelSizeMed);
+            } else {}
+            
+            // Anaglyph types
+            if (anaglyphType == 0) {
+                // Original
+                result = vec4(texelL.rgb, 1.0);
+            } else if (anaglyphType == 1) {
+                // True Anaglyph
+                float r = dot(vec3(0.299, 0.587, 0.114), texelL.rgb);
+                float b = dot(vec3(0.299, 0.587, 0.114), texelR.rgb);
+                result = vec4(r, 0.0, b, 1.0);
+            } else if (anaglyphType == 2) {
+                // Gray Anaglyph
+                float lGray = dot(vec3(0.299, 0.587, 0.114), texelL.rgb);
+                float rGray = dot(vec3(0.299, 0.587, 0.114), texelR.rgb);
+                result = vec4(lGray, rGray, rGray, 1.0);
+            } else if (anaglyphType == 3) {
+                // Color Anaglyph
+                result = vec4(texelL.r, texelR.g, texelR.b, 1.0);
+            } else if (anaglyphType == 4) {
+                // Half Color Anaglyph
+                float lGray = dot(vec3(0.299, 0.587, 0.114), texelL.rgb);
+                result = vec4(lGray, texelR.g, texelR.b, 1.0);
+            } else if (anaglyphType == 5) {
+                // Optimized Anaglyph
+                float lOpt = dot(vec3(0.0, 0.7, 0.3), texelL.rgb);
+                result = vec4(lOpt, texelR.g, texelR.b, 1.0);
+            } else {
+                result = vec4(1.0, 0.0, 1.0, 1.0); // magenta for finding error
+            }
+        
+            out_FragColor = result;
+        }
+        </script>
+        
+
+
+    <script
+      async
+      src="https://unpkg.com/es-module-shims@1.3.6/dist/es-module-shims.js"
+    ></script>
+    <script type="importmap">
+      {
+        "imports": {
+          "three": "https://unpkg.com/three@0.172.0/build/three.module.js",
+          "three/addons/": "https://unpkg.com/three@0.172.0/examples/jsm/"
+        }
+      }
+    </script>
+
+    <script type="module">
+      import * as THREE from "three";
+      import { OrbitControls } from "three/addons/controls/OrbitControls.js";
+      import { GUI } from "three/addons/libs/lil-gui.module.min.js";
+      import WEBGL from "three/addons/capabilities/WebGL.js";
+
+      function IVimageProcessing(height, width, imageProcessingMaterial) {
+        this.height = height;
+        this.width = width;
+
+        //3 rtt setup
+        this.scene = new THREE.Scene();
+        this.orthoCamera = new THREE.OrthographicCamera(
+          -1,
+          1,
+          1,
+          -1,
+          1 / Math.pow(2, 53),
+          1
+        );
+
+        //4 create a target texture
+        var options = {
+          minFilter: THREE.NearestFilter,
+          magFilter: THREE.NearestFilter,
+          format: THREE.RGBAFormat,
+          type: THREE.FloatType,
+          canvas: canvas,
+          context: context,
+        };
+        this.rtt = new THREE.WebGLRenderTarget(width, height, options);
+
+        var geom = new THREE.BufferGeometry();
+        geom.setAttribute(
+          "position",
+          new THREE.BufferAttribute(
+            new Float32Array([
+              -1, -1, 0, 1, -1, 0, 1, 1, 0, -1, -1, 0, 1, 1, 0, -1, 1, 0,
+            ]),
+            3
+          )
+        );
+        this.scene.add(new THREE.Mesh(geom, imageProcessingMaterial));
+      }
+
+      function IVprocess(imageProcessing, renderer) {
+        renderer.setRenderTarget(imageProcessing.rtt);
+        renderer.render(imageProcessing.scene, imageProcessing.orthoCamera);
+        renderer.setRenderTarget(null);
+      }
+
+      var camera, controls, scene, renderer, container;
+      var context, canvas;
+      var plan;
+
+      // VIDEO AND THE ASSOCIATED TEXTURE
+      var video, videoTexture;
+
+      var imageProcessing, imageProcessingMaterial;
+
+      // GUI
+      var gui;
+
+      init();
+      animate();
+
+      function init() {
+        if (WEBGL.isWebGL2Available() === false) {
+          document.body.appendChild(WEBGL.getWebGL2ErrorMessage());
+        }
+        container = document.createElement("div");
+        document.body.appendChild(container);
+
+        canvas = document.createElement("canvas");
+        context = canvas.getContext("webgl2");
+        document.body.appendChild(canvas);
+
+        scene = new THREE.Scene();
+
+        renderer = new THREE.WebGLRenderer({
+          canvas: canvas,
+          context: context,
+        });
+        renderer.autoClear = false;
+        renderer.setPixelRatio(window.devicePixelRatio);
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        renderer.shadowMap.enabled = false;
+
+        container.appendChild(renderer.domElement);
+
+        camera = new THREE.PerspectiveCamera(
+          75,
+          window.innerWidth / window.innerHeight,
+          0.001,
+          10
+        );
+        camera.position.z = 1.0;
+        controls = new OrbitControls(camera, renderer.domElement);
+        controls.enableZoom = true; // zoom 
+        controls.enablePan = true; // pan
+        controls.enableRotate = true;
+        controls.minDistance = 0.005;
+        controls.maxDistance = 2.0;
+
+        controls.addEventListener("change", render);
+        controls.update();
+
+        video = document.createElement("video");
+        video.src = "San_Francisco.mp4"; // San_Francisco.mp4
+        video.load();
+        video.muted = true;
+        video.loop = true;
+
+        video.onloadeddata = function () {
+          videoTexture = new THREE.VideoTexture(video);
+          videoTexture.minFilter = THREE.NearestFilter;
+          videoTexture.magFilter = THREE.NearestFilter;
+          videoTexture.generateMipmaps = false;
+          videoTexture.format = THREE.RGBAFormat;
+
+
+          imageProcessingMaterial = new THREE.RawShaderMaterial({
+            uniforms: {
+              resolution: { value: new THREE.Vector2(video.videoWidth, video.videoHeight) },
+              image: { type: "t", value: videoTexture },
+              anaglyphType: { type: "i", value: 0 },
+              // Convolution filter
+              kernelSize: {value: 3},
+              sigma: {value: 1.0},
+              Convfilter: { type: "i", value: 0 },
+              // Separable Gaussian filter
+              SepFilter: { type: "i", value: 0 },
+              kernelSizeSep: {value: 3},
+              sigmaSep: {value: 1.0},
+              // Median filter
+              medianFilter: {value: 0},
+              kernelSizeMed: {value: 3}
+            },
+            vertexShader: document.getElementById("vertShader").text,
+            fragmentShader: document.getElementById("fragShader").text,
+            glslVersion: THREE.GLSL3,
+          });
+
+          imageProcessing = new IVimageProcessing(
+            video.videoHeight,
+            video.videoWidth,
+            imageProcessingMaterial
+          );
+
+          console.log(imageProcessing.width);
+          console.log(imageProcessing.height);
+
+          var leftgeo = new THREE.PlaneGeometry(
+            1,
+            video.videoHeight / (video.videoWidth / 2.0)
+          );
+          var material2 = new THREE.MeshBasicMaterial({
+            map:  imageProcessing.rtt.texture,
+            side: THREE.DoubleSide,
+          });
+
+          plan = new THREE.Mesh(leftgeo, material2);
+          plan.receiveShadow = false;
+          plan.castShadow = false;
+          scene.add(plan);
+
+          var pausePlayObj = {
+            pausePlay: function () {
+              if (!video.paused) {
+                console.log("pause");
+                video.pause();
+              } else {
+                console.log("play");
+                video.play();
+              }
+            },
+            StopVideo: function () {
+              video.pause();
+              video.currentTime = 0; // Reset the video playback position to the beginning
+              console.log('Stopped and reset');
+            },
+            add10sec: function () {
+              video.currentTime = video.currentTime + 10;
+              console.log(video.currentTime);
+            },
+          };
+
+
+          gui = new GUI();
+          gui.add(imageProcessingMaterial.uniforms.anaglyphType, "value", {
+            "Original": 0,
+            "True Anaglyphs": 1,
+            "Gray Anaglyphs": 2,
+            "Color Anaglyphs": 3,
+            "Half Color Anaglyphs": 4,
+            "Optimized Anaglyphs": 5
+          }).name("Select Anaglyph");
+
+          // root folder
+          const FilterFolder = gui.addFolder("Image Processing Methods");
+
+          // 1. Convolution for Gaussian and Laplacian
+          const GaussianFolderConv = gui.addFolder("Gaussian Settings (conv)");
+          // 2. Separable filter for Gaussian
+          const GaussianFolderSep = gui.addFolder("Gaussian Settings (sep)");
+          // 3. Denoising filter for Median
+          const MedianFolder = gui.addFolder("Median Settings");
+
+          // Initialize with hidden
+          GaussianFolderConv.hide();
+          GaussianFolderSep.hide();
+          MedianFolder.hide();
+
+          //1. Convolution Parameters for Gaussian
+          GaussianFolderConv.add(imageProcessingMaterial.uniforms.kernelSize, "value", [3, 5, 7, 9, 11, 13, 15, 17, 19])
+            .name("Kernel Size");
+          GaussianFolderConv.add(imageProcessingMaterial.uniforms.sigma, "value", 0.1, 10.0)
+            .step(0.1)
+            .name("Sigma");
+          
+          // 2. Separable Parameters for Gaussian
+          GaussianFolderSep.add(imageProcessingMaterial.uniforms.kernelSizeSep, "value", [3, 5, 7, 9, 11, 13, 15, 17, 19])
+            .name("Kernel Size");
+          GaussianFolderSep.add(imageProcessingMaterial.uniforms.sigmaSep, "value", 0.1, 10.0)
+            .step(0.1)
+            .name("Sigma");
+
+          // 3. Denoising Parameters for Median
+          MedianFolder.add(imageProcessingMaterial.uniforms.kernelSizeMed, "value", [3, 5, 7, 9])
+            .name("Kernel Size");
+
+
+          // 1. Convolution: Folders for selecting filters
+          FilterFolder.add(imageProcessingMaterial.uniforms.Convfilter, "value", {
+            "None": 0,
+            "Gaussian filter": 1,
+            "Laplacian filter": 2
+          })
+          .name("Convolution")
+          .onChange((value) => {
+            if (value == 1) { // Gaussian
+              GaussianFolderConv.show();
+              GaussianFolderSep.hide();
+            } else if (value == 2) { // Laplacian
+              GaussianFolderConv.hide();
+              GaussianFolderSep.hide();
+            } else { // None
+              GaussianFolderConv.hide();
+            }
+          });
+
+
+          // 2. Separable filter: Folders for selecting filters
+          FilterFolder.add(imageProcessingMaterial.uniforms.SepFilter, "value", {
+            "None": 0,
+            "Gaussian filter": 1,
+          })
+          .name("Sepalable Gaussian")
+          .onChange((value) => {
+            if (value == 1) { // Gaussian
+              GaussianFolderSep.show();
+              GaussianFolderConv.hide();
+            } else { // None
+              GaussianFolderSep.hide();
+            }
+          });
+
+          // 3. Denoising: Folders for selecting filters
+          FilterFolder.add(imageProcessingMaterial.uniforms.medianFilter, "value", {
+            "None": 0,
+            "Median filter": 1,
+          })
+          .name("Median filter") 
+          .onChange((value) => {
+            if (value == 1) { // median
+              MedianFolder.show();
+            } else { // None
+              MedianFolder.hide();
+            }
+          });
+
+          
+          gui.add(pausePlayObj, "pausePlay").name("Pause/play video");
+          gui.add(pausePlayObj, "StopVideo").name("Stop video")
+          gui.add(pausePlayObj, "add10sec").name("Add 10 seconds");
+
+          video.play();
+        };
+
+        window.addEventListener("resize", onWindowResize, false);
+      }
+    
+
+      function render() {
+        renderer.clear();
+
+        if (typeof imageProcessing !== "undefined")
+          IVprocess(imageProcessing, renderer);
+        renderer.render(scene, camera);
+      }
+
+      function animate() {
+        requestAnimationFrame(animate);
+        controls.update();
+        render();
+      }
+
+      function onWindowResize() {
+        camera.aspect = window.innerWidth / window.innerHeight;
+        camera.updateProjectionMatrix();
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        render();
+      }
+    </script>
+  </body>
+</html>

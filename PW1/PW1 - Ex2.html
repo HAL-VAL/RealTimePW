@@ -1,0 +1,324 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta
+      name="viewport"
+      content="width=device-width, user-scalable=no, minimum-scale=1.0, maximum-scale=1.0"
+    />
+    <title>PRACTICAL WORK 1 - Ex2</title>
+    <style>
+      body {
+        margin: 0;
+        padding: 0;
+        width: 100%;
+        height: 100%;
+
+        overflow: hidden;
+        background-color: #aaaaaa;
+        background-attachment: fixed !important;
+        font-family: Monospace;
+      }
+    </style>
+  </head>
+  <body>
+    <script id="vertShader" type="shader">
+    uniform mat4 modelViewMatrix;
+    uniform mat4 projectionMatrix;
+
+    precision highp float;
+
+    in vec3 position;
+
+    void main() {
+        gl_Position = projectionMatrix *
+                      modelViewMatrix * vec4(position, 1.0 );
+      }
+    </script>
+
+    <script id="fragShader" type="shader">
+        precision highp float;
+        uniform sampler2D image;
+        uniform vec2 resolution;
+        uniform int anaglyphType;
+        out vec4 out_FragColor;
+        
+        void main() {
+          // create the left and right coordinates
+          ivec2 fragCoord = ivec2(gl_FragCoord.xy);
+          int halfWidth = int(resolution.x * 0.5);
+          ivec2 leftCoord = ivec2(fragCoord.x / 2, fragCoord.y);
+          ivec2 rightCoord = ivec2(fragCoord.x / 2 + halfWidth, fragCoord.y);
+          vec4 texelL = texelFetch(image, leftCoord, 0);
+          vec4 texelR = texelFetch(image, rightCoord, 0);
+      
+          vec4 result;
+          
+          // Anaglyph types
+          if (anaglyphType == 0) {
+            // Original
+            result = vec4(texelL.rgb, 1.0);
+          } else if (anaglyphType == 1) {
+              // True Anaglyphs
+              float r = dot(vec3(0.299, 0.587, 0.114), texelL.rgb);
+              float b = dot(vec3(0.299, 0.587, 0.114), texelR.rgb);
+              result = vec4(r, 0.0, b, 1.0);
+          } else if (anaglyphType == 2) {
+              // Gray Anaglyphs
+              float lGray = dot(vec3(0.299, 0.587, 0.114), texelL.rgb);
+              float rGray = dot(vec3(0.299, 0.587, 0.114), texelR.rgb);
+              result = vec4(lGray, rGray, rGray, 1.0);
+          } else if (anaglyphType == 3) {
+              // Color Anaglyphs
+              result = vec4(texelL.r, texelR.g, texelR.b, 1.0);
+          } else if (anaglyphType == 4) {
+              // Half Color Anaglyphs
+              float lGray = dot(vec3(0.299, 0.587, 0.114), texelL.rgb);
+              result = vec4(lGray, texelR.g, texelR.b, 1.0);
+          } else if (anaglyphType == 5) {
+              // Optimized Anaglyphs
+              float lOpt = dot(vec3(0.0, 0.7, 0.3), texelL.rgb);
+              result = vec4(lOpt, texelR.g, texelR.b, 1.0);
+          }
+          out_FragColor = result;
+        }
+        </script>
+        
+
+
+    <script
+      async
+      src="https://unpkg.com/es-module-shims@1.3.6/dist/es-module-shims.js"
+    ></script>
+    <script type="importmap">
+      {
+        "imports": {
+          "three": "https://unpkg.com/three@0.172.0/build/three.module.js",
+          "three/addons/": "https://unpkg.com/three@0.172.0/examples/jsm/"
+        }
+      }
+    </script>
+
+    <script type="module">
+      import * as THREE from "three";
+      import { OrbitControls } from "three/addons/controls/OrbitControls.js";
+      import { GUI } from "three/addons/libs/lil-gui.module.min.js";
+      import WEBGL from "three/addons/capabilities/WebGL.js";
+
+      function IVimageProcessing(height, width, imageProcessingMaterial) {
+        this.height = height;
+        this.width = width;
+
+        //3 rtt setup
+        this.scene = new THREE.Scene();
+        this.orthoCamera = new THREE.OrthographicCamera(
+          -1,
+          1,
+          1,
+          -1,
+          1 / Math.pow(2, 53),
+          1
+        );
+
+        //4 create a target texture
+        var options = {
+          minFilter: THREE.NearestFilter,
+          magFilter: THREE.NearestFilter,
+          format: THREE.RGBAFormat,
+          type: THREE.FloatType,
+          canvas: canvas,
+          context: context,
+        };
+        this.rtt = new THREE.WebGLRenderTarget(width, height, options);
+
+        var geom = new THREE.BufferGeometry();
+        geom.setAttribute(
+          "position",
+          new THREE.BufferAttribute(
+            new Float32Array([
+              -1, -1, 0, 1, -1, 0, 1, 1, 0, -1, -1, 0, 1, 1, 0, -1, 1, 0,
+            ]),
+            3
+          )
+        );
+        this.scene.add(new THREE.Mesh(geom, imageProcessingMaterial));
+      }
+
+      function IVprocess(imageProcessing, renderer) {
+        renderer.setRenderTarget(imageProcessing.rtt);
+        renderer.render(imageProcessing.scene, imageProcessing.orthoCamera);
+        renderer.setRenderTarget(null);
+      }
+
+      var camera, controls, scene, renderer, container;
+      var context, canvas;
+      var plan;
+
+      // VIDEO AND THE ASSOCIATED TEXTURE
+      var video, videoTexture;
+
+      var imageProcessing, imageProcessingMaterial;
+
+      // GUI
+      var gui;
+
+      init();
+      animate();
+
+      function init() {
+        if (WEBGL.isWebGL2Available() === false) {
+          document.body.appendChild(WEBGL.getWebGL2ErrorMessage());
+        }
+        container = document.createElement("div");
+        document.body.appendChild(container);
+
+        canvas = document.createElement("canvas");
+        context = canvas.getContext("webgl2");
+        document.body.appendChild(canvas);
+
+        scene = new THREE.Scene();
+
+        renderer = new THREE.WebGLRenderer({
+          canvas: canvas,
+          context: context,
+        });
+        renderer.autoClear = false;
+        renderer.setPixelRatio(window.devicePixelRatio);
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        renderer.shadowMap.enabled = false;
+
+        container.appendChild(renderer.domElement);
+
+        camera = new THREE.PerspectiveCamera(
+          75,
+          window.innerWidth / window.innerHeight,
+          0.001,
+          10
+        );
+
+        camera.position.z = 1.0;
+        controls = new OrbitControls(camera, renderer.domElement);
+        controls.enableZoom = true; // zoom 
+        controls.enablePan = true; // pan
+        controls.enableRotate = true;
+        controls.minDistance = 0.005;
+        controls.maxDistance = 2.0;
+
+        controls.addEventListener("change", render);
+        controls.update();
+
+        video = document.createElement("video");
+        video.src = "San_Francisco.mp4"; // San_Francisco.mp4
+        video.load();
+        video.muted = true;
+        video.loop = true;
+
+        video.onloadeddata = function () {
+          videoTexture = new THREE.VideoTexture(video);
+          videoTexture.minFilter = THREE.NearestFilter;
+          videoTexture.magFilter = THREE.NearestFilter;
+          videoTexture.generateMipmaps = false;
+          videoTexture.format = THREE.RGBAFormat;
+
+
+          imageProcessingMaterial = new THREE.RawShaderMaterial({
+            uniforms: {
+              resolution: { value: new THREE.Vector2(video.videoWidth, video.videoHeight) },
+              image: { type: "t", value: videoTexture },
+              anaglyphType: { type: "i", value: 0 },
+            },
+            vertexShader: document.getElementById("vertShader").text,
+            fragmentShader: document.getElementById("fragShader").text,
+            glslVersion: THREE.GLSL3,
+          });
+
+          imageProcessing = new IVimageProcessing(
+            video.videoHeight,
+            video.videoWidth,
+            imageProcessingMaterial
+          );
+
+          console.log(imageProcessing.width);
+          console.log(imageProcessing.height);
+
+          var leftgeo = new THREE.PlaneGeometry(
+            1,
+            video.videoHeight / (video.videoWidth / 2.0)
+          );
+          var material2 = new THREE.MeshBasicMaterial({
+            map:  imageProcessing.rtt.texture,
+            side: THREE.DoubleSide,
+          });
+
+          plan = new THREE.Mesh(leftgeo, material2);
+          plan.receiveShadow = false;
+          plan.castShadow = false;
+          scene.add(plan);
+
+          var pausePlayObj = {
+            pausePlay: function () {
+              if (!video.paused) {
+                console.log("pause");
+                video.pause();
+              } else {
+                console.log("play");
+                video.play();
+              }
+            },
+            StopVideo: function () {
+              video.pause();
+              video.currentTime = 0; // Reset the video playback position to the beginning
+              console.log('Stopped and reset');
+            },
+            add10sec: function () {
+              video.currentTime = video.currentTime + 10;
+              console.log(video.currentTime);
+            },
+          };
+
+
+          gui = new GUI();
+          // Anaglyphs GUI
+          gui.add(imageProcessingMaterial.uniforms.anaglyphType, "value", {
+            "Original": 0,
+            "True Anaglyphs": 1,
+            "Gray Anaglyphs": 2,
+            "Color Anaglyphs": 3,
+            "Half Color Anaglyphs": 4,
+            "Optimized Anaglyphs": 5
+          }).name("Select Anaglyph");
+          
+          gui.add(pausePlayObj, "pausePlay").name("Pause/play video");
+          gui.add(pausePlayObj, "StopVideo").name("Stop video")
+          gui.add(pausePlayObj, "add10sec").name("Add 10 seconds");
+
+          video.play();
+        };
+
+        window.addEventListener("resize", onWindowResize, false);
+      }
+    
+
+      function render() {
+        renderer.clear();
+
+        if (typeof imageProcessing !== "undefined")
+          IVprocess(imageProcessing, renderer);
+        renderer.render(scene, camera);
+      }
+
+      function animate() {
+        requestAnimationFrame(animate);
+        controls.update();
+        render();
+      }
+
+      function onWindowResize() {
+        camera.aspect = window.innerWidth / window.innerHeight;
+        camera.updateProjectionMatrix();
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        render();
+      }
+    </script>
+  </body>
+</html>
