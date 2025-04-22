@@ -1,0 +1,15 @@
+PW2-Ex1_1
+g++ PW2-Ex1_1.cpp -fopenmp `pkg-config opencv4 --cflags --libs` -lstdc++ -o PW2-Ex1_1
+./PW2-Ex1_1 San_Francisco.mp4
+
+PW2-Ex1_2
+g++ PW2-Ex1_2.cpp -fopenmp `pkg-config opencv4 --cflags --libs` -lstdc++ -o PW2-Ex1_2
+./PW2-Ex1_2 San_Francisco.mp4
+
+PW2-Ex1_3_omp
+g++ PW2-Ex1_3_omp.cpp -fopenmp `pkg-config opencv4 --cflags --libs` -lstdc++ -o PW2-Ex1_3_omp
+./PW2-Ex1_3_omp test.tif output.tif 7 150.0 30
+
+PW2-Ex1_3_cuda
+/usr/local/cuda-12.1/bin/nvcc PW2-Ex1_3_cuda.cpp PW2-Ex1_3_cuda.cu -o PW2-Ex1_3_cuda `pkg-config --cflags --libs opencv4`
+./PW2-Ex1_3_cuda test.tif output_cu1.tif 5 0.01 100
